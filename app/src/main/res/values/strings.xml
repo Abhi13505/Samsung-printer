@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Samsung Printer</string>
+    <string name="print_service_label">SCX-3200 USB</string>
+    <string name="tab_studio">Print Studio</string>
+    <string name="tab_printer">Printer &amp; History</string>
+    <string name="usb_disconnected">Disconnected — Connect OTG Cable</string>
+    <string name="usb_permission_required">Permission Required — Tap to Grant</string>
+    <string name="usb_ready">SCX-3200 Ready</string>
+    <string name="usb_printing">Printing via USB…</string>
+    <string name="usb_not_supported">USB Host mode unavailable on this device</string>
+    <string name="action_pick_photo">Pick Photo</string>
+    <string name="action_open_pdf">Open PDF</string>
+    <string name="action_print_usb">Print via USB</string>
+    <string name="action_cancel_job">Cancel Job</string>
+    <string name="action_scan_usb">Scan USB</string>
+    <string name="action_grant_usb">Grant USB Access</string>
+    <string name="action_test_page">Print Test Page</string>
+    <string name="action_clear_history">Clear History</string>
+    <string name="action_reset_adjustments">Reset</string>
+    <string name="action_enable_print_service">System Print Settings</string>
+    <string name="empty_canvas_title">Paper Canvas Ready</string>
+    <string name="empty_canvas_subtitle">Pick one or more photos, or open a PDF document to preview monochrome laser output before printing over USB OTG.</string>
+    <string name="empty_history_title">No Print Jobs Yet</string>
+    <string name="empty_history_subtitle">Completed, cancelled, and diagnostic test page runs appear here with transfer metrics.</string>
+</resources>
