@@ -1,6 +1,0 @@
-{
-  "name": "Samsung Printer",
-  "description": "Clean USB OTG direct print studio and Android Print Service for Samsung SCX-3200 monochrome laser printers.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

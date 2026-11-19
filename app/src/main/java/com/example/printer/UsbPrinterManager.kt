@@ -20,6 +20,7 @@ import com.example.model.UsbPrinterStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +40,18 @@ class UsbPrinterManager(private val context: Context) {
         const val SCX_3200_PRODUCT_ID = 0x3441
         const val ACTION_USB_PERMISSION = "com.example.scxprint.USB_PERMISSION"
         private const val USB_TRANSFER_CHUNK_BYTES = 16 * 1024
-        private const val USB_TIMEOUT_MS = 15_000
+        const val USB_TIMEOUT_MS = 60_000
+        const val MAX_BULK_RETRIES = 3
+        private const val BULK_RETRY_DELAY_MS = 500L
+
+        /**
+         * USB Device Class Definition for Printing Devices v1.1 §4.2.1:
+         * GET_DEVICE_ID expects the interface number in the high byte and
+         * the alternate setting in the low byte of wIndex.
+         */
+        internal fun buildGetDeviceIdIndex(interfaceId: Int, alternateSetting: Int): Int {
+            return ((interfaceId and 0xFF) shl 8) or (alternateSetting and 0xFF)
+        }
     }
 
     private val appContext = context.applicationContext
@@ -260,9 +272,28 @@ class UsbPrinterManager(private val context: Context) {
                             chunk.copyOfRange(offset, offset + toSend)
                         }
 
-                        val written = connection.bulkTransfer(bulkOut, slice, toSend, USB_TIMEOUT_MS)
+                        var written = -1
+                        for (attempt in 0..MAX_BULK_RETRIES) {
+                            currentCoroutineContext().ensureActive()
+                            written = connection.bulkTransfer(bulkOut, slice, toSend, USB_TIMEOUT_MS)
+                            if (written > 0) break
+
+                            // Check printer status before retrying so hardware errors fail fast
+                            val liveFlags = readPortFlags(connection, printerIface)
+                            if (liveFlags.paperEmpty) {
+                                throw IllegalStateException("Printer reports Paper Tray Empty")
+                            }
+                            if (!liveFlags.noError) {
+                                throw IllegalStateException("Printer reported a hardware error during transfer")
+                            }
+                            if (attempt < MAX_BULK_RETRIES) {
+                                delay(BULK_RETRY_DELAY_MS * (attempt + 1))
+                            }
+                        }
                         if (written <= 0) {
-                            throw IllegalStateException("USB bulk transfer interrupted (code $written)")
+                            throw IllegalStateException(
+                                "USB bulk transfer timed out after $MAX_BULK_RETRIES retries (code $written)"
+                            )
                         }
                         offset += written
                         totalSent += written
@@ -365,17 +396,31 @@ class UsbPrinterManager(private val context: Context) {
     ): UsbDeviceDetails {
         val base = buildBaseDetails(device)
 
-        // USB Printer Class GET_DEVICE_ID (request 0x00)
+        // USB Printer Class GET_DEVICE_ID (request 0x00):
+        // wIndex high byte = interface number, low byte = alternate setting (USB Printer Spec §4.2.1).
         val idBuf = ByteArray(1024)
-        val idRead = conn.controlTransfer(
+        val specIndex = buildGetDeviceIdIndex(printerIface.id, printerIface.alternateSetting)
+        var idRead = conn.controlTransfer(
             UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or 0x01,
             0x00,
             0,
-            printerIface.id,
+            specIndex,
             idBuf,
             idBuf.size,
             2000
         )
+        // Fallback for non-compliant firmware expecting raw interface ID in low byte
+        if (idRead <= 2 && specIndex != printerIface.id) {
+            idRead = conn.controlTransfer(
+                UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or 0x01,
+                0x00,
+                0,
+                printerIface.id,
+                idBuf,
+                idBuf.size,
+                2000
+            )
+        }
         val ieee1284 = if (idRead > 2) {
             val declaredLen = ((idBuf[0].toInt() and 0xFF) shl 8) or (idBuf[1].toInt() and 0xFF)
             val usableLen = minOf(declaredLen, idRead).coerceAtLeast(2) - 2
@@ -384,7 +429,22 @@ class UsbPrinterManager(private val context: Context) {
             } else null
         } else null
 
-        // USB Printer Class GET_PORT_STATUS (request 0x01)
+        val flags = readPortFlags(conn, printerIface)
+
+        return base.copy(
+            ieee1284Id = ieee1284,
+            portFlags = flags
+        )
+    }
+
+    /**
+     * USB Printer Class GET_PORT_STATUS (request 0x01).
+     * Per USB Printer Class 1.1 §4.2.2, wIndex is the raw interface number (unlike GET_DEVICE_ID).
+     */
+    private fun readPortFlags(
+        conn: UsbDeviceConnection,
+        printerIface: UsbInterface
+    ): UsbPortFlags {
         val statusBuf = ByteArray(1)
         val statusRead = conn.controlTransfer(
             UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or 0x01,
@@ -395,7 +455,7 @@ class UsbPrinterManager(private val context: Context) {
             1,
             2000
         )
-        val flags = if (statusRead >= 1) {
+        return if (statusRead >= 1) {
             val b = statusBuf[0].toInt() and 0xFF
             UsbPortFlags(
                 paperEmpty = (b and 0x20) != 0,
@@ -405,10 +465,5 @@ class UsbPrinterManager(private val context: Context) {
         } else {
             UsbPortFlags()
         }
-
-        return base.copy(
-            ieee1284Id = ieee1284,
-            portFlags = flags
-        )
     }
 }

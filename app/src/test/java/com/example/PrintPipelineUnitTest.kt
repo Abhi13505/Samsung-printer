@@ -16,12 +16,23 @@ import com.example.model.PrintSettings
 import com.example.model.QpdlDialect
 import com.example.printer.JbigEncoder
 import com.example.printer.SplQpdlEncoder
+import com.example.printer.UsbPrinterManager
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrintPipelineUnitTest {
+
+    @Test
+    fun `usb printer manager uses 60s timeout, retries, and spec-compliant GET_DEVICE_ID wIndex`() {
+        assertEquals(60_000, UsbPrinterManager.USB_TIMEOUT_MS)
+        assertEquals(3, UsbPrinterManager.MAX_BULK_RETRIES)
+        // USB Printer Class 1.1 §4.2.1: interface in high byte, alternate setting in low byte
+        assertEquals(0x0000, UsbPrinterManager.buildGetDeviceIdIndex(interfaceId = 0, alternateSetting = 0))
+        assertEquals(0x0100, UsbPrinterManager.buildGetDeviceIdIndex(interfaceId = 1, alternateSetting = 0))
+        assertEquals(0x0203, UsbPrinterManager.buildGetDeviceIdIndex(interfaceId = 2, alternateSetting = 3))
+    }
 
     @Test
     fun `page range parser handles ranges odd even current and clamping`() {
